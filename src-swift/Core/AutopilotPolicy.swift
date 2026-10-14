@@ -54,8 +54,17 @@ final class AutopilotPolicy {
     private let dwell: TimeInterval
     private let hysteresisC: Double
 
+    /// A user-defined engage temperature for each of the four cooling tiers,
+    /// replacing the ladder derived from `engageC`. `nil` means "use the
+    /// ladder". Always valid when set — see `isValidCurve`.
+    private(set) var customCurveC: [Double]?
+
     /// Engage temperature for each tier index ≥ 1, ascending.
     private var engagePoints: [(temperatureC: Double, tierIndex: Int)] = []
+
+    /// Where the first cooling tier engages: the threshold the menu reports
+    /// while Auto is waiting for the Mac to warm up.
+    var firstEngageC: Double { engagePoints.first?.temperatureC ?? engageC }
 
     /// Die temperatures mapped to the LED's green and red endpoints.
     private var ledGreenC: Double = 0
@@ -85,22 +94,42 @@ final class AutopilotPolicy {
         configure(engageC: celsius)
     }
 
+    /// Replaces the ladder with explicit engage temperatures for the four
+    /// tiers, or restores it with `nil`. An invalid curve is ignored, so a bad
+    /// saved value can never leave the ladder out of order.
+    func setCustomCurve(_ temperaturesC: [Double]?) {
+        customCurveC = temperaturesC.flatMap { Self.isValidCurve($0) ? $0 : nil }
+        configure(engageC: engageC)
+    }
+
+    /// Whether `temperaturesC` is a usable curve: one point per cooling tier,
+    /// each inside the allowed range and each at least a degree above the one
+    /// before it, so the tiers engage in order.
+    static func isValidCurve(_ temperaturesC: [Double]) -> Bool {
+        guard temperaturesC.count == tiers.count - 1 else { return false }
+        let bounds = Config.Autopilot.curveMinC...Config.Autopilot.curveMaxC
+        guard temperaturesC.allSatisfy({ bounds.contains($0) }) else { return false }
+        return zip(temperaturesC, temperaturesC.dropFirst()).allSatisfy { $1 - $0 >= 1 }
+    }
+
+    /// The ladder derived from a single engage point: steps 10 °C apart, with
+    /// every tier capped so a high engage point can't push it past 95 °C. The
+    /// intermediate steps need the cap too, not just the top one: an 80 °C
+    /// engage point would otherwise put tier 3 at 100 °C — *above* tier 4's
+    /// capped 95 — and the ladder would engage out of order.
+    static func defaultCurve(engageC: Double) -> [Double] {
+        let engage = clampEngage(engageC)
+        let ceiling = min(engage + 30, 95)
+        return [engage, min(engage + 10, ceiling), min(engage + 20, ceiling), ceiling]
+    }
+
     private func configure(engageC: Double) {
         self.engageC = Self.clampEngage(engageC)
 
-        // Steps sit 10 °C apart above the user's engage point, with every
-        // tier capped so a high engage point can't push it past 95 °C. The
-        // intermediate steps need the cap too, not just the top one: a
-        // 80 °C engage point would otherwise put tier 3 at 100 °C — *above*
-        // tier 4's capped 95 — and the ladder would engage out of order.
-        let engage = self.engageC
-        let ceiling = min(engage + 30, 95)
-        engagePoints = [(engage, 1),
-                        (min(engage + 10, ceiling), 2),
-                        (min(engage + 20, ceiling), 3),
-                        (ceiling, 4)]
-        ledGreenC = max(30, engage - 10)
-        ledRedC = ceiling
+        let curve = customCurveC ?? Self.defaultCurve(engageC: self.engageC)
+        engagePoints = curve.enumerated().map { (temperatureC: $0.element, tierIndex: $0.offset + 1) }
+        ledGreenC = max(30, curve[0] - 10)
+        ledRedC = curve[curve.count - 1]
 
         // The ladder moved underneath us; abandon any dwell in progress.
         coolingSince = nil

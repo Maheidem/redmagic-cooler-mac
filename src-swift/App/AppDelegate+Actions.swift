@@ -48,6 +48,52 @@ extension AppDelegate {
         refresh()
     }
 
+    // ── Temperature source and Auto curve ────────────────────────────────────
+
+    func showTemperatureSourceWindow() {
+        let window = temperatureSourceWindow ?? TemperatureSourceWindow(current: temperatureSource)
+        window.onSelect = { [weak self] in self?.setTemperatureSource($0) }
+        temperatureSourceWindow = window
+        window.show(current: temperatureSource)
+    }
+
+    func setTemperatureSource(_ source: ThermalMonitor.Source) {
+        temperatureSource = source
+        UserDefaults.standard.set(source.stored, forKey: Config.Key.temperatureSource)
+        EventLogger.record("temperature source → \(source.title)")
+        thermal = ThermalMonitor.read(source: source)
+        if appMode == .auto { runAutopilot() }
+        refresh()
+    }
+
+    func showAutoCurveWindow() {
+        let defaults = UserDefaults.standard
+        let window = autoCurveWindow ?? AutoCurveWindow()
+        window.onSave = { [weak self] in self?.applyCustomCurve(enabled: $0, temperaturesC: $1) }
+        autoCurveWindow = window
+
+        let saved = (defaults.array(forKey: Config.Key.customCurveC) as? [Double])
+            .flatMap { AutopilotPolicy.isValidCurve($0) ? $0 : nil }
+        let inUse = autopilot.customCurveC
+        let fallback = AutopilotPolicy.defaultCurve(engageC: autopilot.engageC)
+        window.show(enabled: inUse != nil,
+                    curveC: inUse ?? saved ?? fallback,
+                    defaultCurveC: fallback)
+    }
+
+    func applyCustomCurve(enabled: Bool, temperaturesC: [Double]) {
+        let defaults = UserDefaults.standard
+        defaults.set(enabled, forKey: Config.Key.customCurveOn)
+        if AutopilotPolicy.isValidCurve(temperaturesC) {
+            defaults.set(temperaturesC, forKey: Config.Key.customCurveC)
+        }
+        autopilot.setCustomCurve(enabled ? temperaturesC : nil)
+        let summary = temperaturesC.map { String(format: "%.0f", $0) }.joined(separator: "/")
+        EventLogger.record(enabled ? "auto curve → custom \(summary)°C" : "auto curve → default ladder")
+        if appMode == .auto { runAutopilot() }
+        refresh()
+    }
+
     /// Applies a manual slider position.
     ///
     /// - Parameter alreadySwitching: set when called from `selectMode`, which

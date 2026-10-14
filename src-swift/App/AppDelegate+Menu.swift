@@ -149,6 +149,18 @@ extension AppDelegate: NSMenuDelegate {
         let turnOff = wrap(turnOffRow)
         menu.addItem(turnOff)
 
+        // Both open a window of their own, so they dismiss the menu like the
+        // other rows here.
+        autoCurveRow = settingsRow("Auto Curve…", symbol: "chart.xyaxis.line") {
+            [weak self] in self?.showAutoCurveWindow()
+        }
+        menu.addItem(wrap(autoCurveRow))
+
+        temperatureSourceRow = settingsRow("Temperature Source…", symbol: "thermometer.medium") {
+            [weak self] in self?.showTemperatureSourceWindow()
+        }
+        menu.addItem(wrap(temperatureSourceRow))
+
         // Unlike its neighbours this row leaves the menu open, because
         // everything it does — the inline picker, the scan progress — is
         // displayed in the rows above it.

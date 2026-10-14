@@ -91,7 +91,8 @@ extension AppDelegate {
         modeSwitch.setMode(appMode)
         modeSwitch.setEnabled(enabled)
 
-        autoOptions.configure(engageC: autopilot.engageC)
+        autoOptions.configure(engageC: autopilot.engageC,
+                              customFirstC: autopilot.customCurveC == nil ? nil : autopilot.firstEngageC)
         autoOptions.setEnabled(enabled)
 
         // While a switch is in flight the fan write hasn't landed yet, so
@@ -184,7 +185,7 @@ extension AppDelegate {
     }
 
     private func refreshSettingsItems(coolerOn: Bool, pickingDevice: Bool) {
-        for row in [turnOffRow, changeDeviceRow, turnOffQuitRow] {
+        for row in [turnOffRow, autoCurveRow, temperatureSourceRow, changeDeviceRow, turnOffQuitRow] {
             row?.isEnabled = !isInstallingUpdate
         }
 
@@ -192,6 +193,8 @@ extension AppDelegate {
         // file, so the panel's corners always land on the rows actually shown.
         applyPanelSegments(to: [
             (turnOffRow, coolerOn),
+            (autoCurveRow, true),
+            (temperatureSourceRow, true),
             (changeDeviceRow, !pickingDevice),
             (turnOffQuitRow, true),
         ])
@@ -267,7 +270,7 @@ extension AppDelegate {
             return manualTimer.deadline == nil ? .manualStaysOn : nil
         }
         // Auto below its threshold: doing nothing, on purpose.
-        return ble.mode.isOn ? nil : .autoWaiting(engageC: Int(autopilot.engageC))
+        return ble.mode.isOn ? nil : .autoWaiting(engageC: Int(autopilot.firstEngageC))
     }
 
 }

@@ -45,6 +45,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var turnOffRow: MenuActionRow!
     var changeDeviceRow: MenuActionRow!
     var turnOffQuitRow: MenuActionRow!
+    var autoCurveRow: MenuActionRow!
+    var temperatureSourceRow: MenuActionRow!
     var skipUpdateRow: MenuActionRow!
 
     /// The menu items wrapping those rows, plus the plain items whose
@@ -65,6 +67,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// touched anything since. Cleared by the next cooling command, so the
     /// panel says what happened exactly once.
     var manualTimedOut = false
+
+    /// Which temperature counts as the Mac's: the SoC die average unless the
+    /// user picked another in Temperature Source.
+    var temperatureSource = ThermalMonitor.Source.dieAverage
+    var temperatureSourceWindow: TemperatureSourceWindow?
+    var autoCurveWindow: AutoCurveWindow?
 
     /// Latest thermal sample, refreshed each tick.
     var thermal = ThermalMonitor.Reading(thermalState: .nominal, dieTemperatureC: nil)
@@ -188,6 +196,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         autopilot = AutopilotPolicy(engageC: engageC)
         defaults.set(autopilot.engageC, forKey: Config.Key.engageC)
+        if defaults.bool(forKey: Config.Key.customCurveOn) {
+            autopilot.setCustomCurve(defaults.array(forKey: Config.Key.customCurveC) as? [Double])
+        }
+        temperatureSource = ThermalMonitor.Source(
+            stored: defaults.string(forKey: Config.Key.temperatureSource))
     }
 
     private func buildStatusItem() {
@@ -204,7 +217,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         tickCount += 1
 
         handlePendingProbeCommand()
-        thermal = ThermalMonitor.read()
+        thermal = ThermalMonitor.read(source: temperatureSource)
         updateSwitchMonitor()
         expireManualTimerIfDue()
 

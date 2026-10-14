@@ -5,7 +5,7 @@ heats up, raises cooling power with temperature, and turns it off after the Mac
 has cooled. Auto is the default mode after connection.
 
 This guide explains the temperature signal, engage threshold, cooling ladder,
-anti-flap behaviour, safety floor, and LED heat gauge.
+custom curve, anti-flap behaviour, safety floor, and LED heat gauge.
 
 Implementation:
 [`AutopilotPolicy.swift`](../src-swift/Core/AutopilotPolicy.swift).
@@ -21,12 +21,30 @@ damped. Autopilot uses it as a safety floor rather than its primary input.
 
 | Temperature | Source | Use |
 |-------------|--------|-----|
-| **Mac die °C** | Mac SoC sensors | Drives Auto mode |
+| **Mac °C** | Mac SoC sensors, or the sensor you choose | Drives Auto mode |
 | Cooler cold/hot °C | Cooler telemetry | Display only |
 | Ambient °C | Cooler telemetry | Display only |
 
 The cooler reports plate temperatures only while actively cooling. Cold or hot
 readings of `0 °C` while it is off are device behaviour.
+
+### Choosing the sensor
+
+By default Auto mode follows the **average of the SoC die sensors** (`PMU tdie*`).
+**Settings → Temperature Source…** opens a live list of everything this Mac
+reports, and the one you pick drives Auto mode, the status card and the LED's
+Auto colour:
+
+- **Groups:** SoC die average (the default) or hottest sensor, device sensors
+  (`PMU tdev*`) average or hottest, battery, and SSD. A group appears only if
+  this Mac has sensors for it.
+- **Individual sensors,** by name (`PMU tdie3`, `gas gauge battery`, and so on).
+  A sensor exposed more than once is shown as the mean of its readings.
+
+The choice is saved by name. If the chosen sensor is missing at a later launch,
+Auto mode uses the SoC die average instead of going blind. The sensors are
+read-only and the list is what the HID interface exposes on your Mac, so names
+and counts differ between models.
 
 ## Engage threshold and cooling levels
 
@@ -47,6 +65,27 @@ at 95 °C so a high engage point cannot create an out-of-order ladder.
 | `E`+30 and above | max | max | 100% |
 
 For the default `E = 45 °C`, the tier boundaries are 45, 55, 65, and 75 °C.
+
+## Custom curve
+
+**Settings → Auto Curve…** replaces that derived ladder with a temperature of
+your own for each of the four cooling tiers (low, med-low, medium, max):
+
+- Tick **Use a custom curve**, type a temperature for each tier, and Save. The
+  fields are in your system temperature unit.
+- Each tier must be at least 1 °C hotter than the one before, and all must fall
+  between 30 and 100 °C. The window says what is wrong and keeps Save disabled
+  until the curve is valid.
+- **Reset** puts back the ladder the threshold slider would give. Unticking the
+  box returns to that ladder and keeps your values for next time.
+- While a custom curve is on, the threshold slider is greyed and the row reads
+  **Custom curve** with the temperature where the first tier engages.
+
+Everything else is unchanged: the tiers still map to the same cooling levels,
+the 5 °C release margin and 15-second dwell still apply, the safety floor still
+applies, and the LED heat gauge now runs from 10 °C below the first tier to red
+at the last. A curve is only about *when* each tier engages, not how hard it
+cools; the fan speeds stay tuned to the cooler model.
 
 The TEC and fan are independent cooler controls. Fan percentages are not
 linear in RPM; these values were selected from hardware probes of the
@@ -120,7 +159,8 @@ Transitions are written to `~/.cooler.log`.
 The threshold range, default, hysteresis, and dwell are in
 [`Config.swift`](../src-swift/Core/Config.swift). The tier ladder and LED band
 are built by `configure(engageC:)` in
-[`AutopilotPolicy.swift`](../src-swift/Core/AutopilotPolicy.swift).
+[`AutopilotPolicy.swift`](../src-swift/Core/AutopilotPolicy.swift), from either
+`defaultCurve(engageC:)` or a validated custom curve (`isValidCurve`).
 
 ```swift
 enum Autopilot {

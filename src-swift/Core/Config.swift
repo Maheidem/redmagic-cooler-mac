@@ -43,6 +43,9 @@ enum Config {
         static let preferredDevice = "PreferredDeviceUUID"
         static let appMode         = "AppMode"             // AppMode.rawValue
         static let engageC         = "AutopilotEngageTempC" // Double, °C
+        static let customCurveOn   = "CustomCurveEnabled"   // Bool
+        static let customCurveC    = "CustomCurveTempsC"    // [Double], 4 °C values
+        static let temperatureSource = "TemperatureSource"  // ThermalMonitor.Source.stored
         // Read only when migrating settings from builds with Standard/Custom.
         static let legacyAutoProfile = "AutoProfile"
         static let legacyCustomEngageC = "CustomEngageTempC"
@@ -132,6 +135,11 @@ enum Config {
         static let engageDefaultC: Double = 45.0
         static let engageMinC: Double = 45.0
         static let engageMaxC: Double = 85.0
+
+        /// Range a custom curve's tier temperatures may take (°C). Wider than
+        /// the slider's, since each tier is set on its own.
+        static let curveMinC: Double = 30.0
+        static let curveMaxC: Double = 100.0
     }
 
     // ── Diagnostics ──────────────────────────────────────────────────────────
