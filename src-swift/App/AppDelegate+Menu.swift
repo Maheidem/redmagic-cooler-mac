@@ -214,11 +214,14 @@ extension AppDelegate: NSMenuDelegate {
 
     /// Animate the fan only while the menu is actually visible.
     func menuWillOpen(_ menu: NSMenu) {
+        // Rows can be left highlighted by a menu that closed under the pointer.
+        menu.items.forEach { ($0.view as? MenuActionRow)?.clearHighlight() }
         coolerPanel.startAnimating()
         refresh()
     }
 
     func menuDidClose(_ menu: NSMenu) {
+        menu.items.forEach { ($0.view as? MenuActionRow)?.clearHighlight() }
         coolerPanel.stopAnimating()
     }
 

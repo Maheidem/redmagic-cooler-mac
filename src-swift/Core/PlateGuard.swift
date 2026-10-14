@@ -14,6 +14,10 @@ struct PlateGuard {
     /// How often another level is held back while the plate stays under the limit.
     /// Long enough for the plate to respond to the last one.
     static let stepDownEvery: TimeInterval = 20
+    /// The same, once the plate is `farBelowC` under the limit: waiting a full
+    /// interval at each step would let it keep falling.
+    static let farStepDownEvery: TimeInterval = 10
+    static let farBelowC: Double = 5
     /// How long the plate must stay `releaseMarginC` above the limit before a
     /// level is given back.
     static let recoverAfter: TimeInterval = 30
@@ -45,7 +49,8 @@ struct PlateGuard {
 
         if plateC < floorC {
             recoveredSince = nil
-            if lastStepDown.map({ now - $0 >= Self.stepDownEvery }) ?? true {
+            let interval = plateC < floorC - Self.farBelowC ? Self.farStepDownEvery : Self.stepDownEvery
+            if lastStepDown.map({ now - $0 >= interval }) ?? true {
                 levels = min(levels + 1, maxLevels)
                 lastStepDown = now
             }

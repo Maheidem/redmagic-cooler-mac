@@ -107,7 +107,16 @@ extension AppDelegate: CoolerBLEManagerDelegate {
     func bleManager(_ manager: CoolerBLEManager, didReceive telemetry: CoolerTelemetry) {
         self.telemetry = telemetry
         lastTelemetryAt = Date().timeIntervalSince1970
-        refresh()
+        // Also here, not only on the 1 s tick: the tick does not run while a menu
+        // is open, and a limit that protects the plate must not depend on whether
+        // anyone is looking at the menu.
+        updatePlateGuard()
+        // At most once a second: the cooler can report several times a second,
+        // and redrawing the menu that often fights whatever the user is doing in it.
+        if lastTelemetryAt.map({ $0 - lastTelemetryRefresh >= 1 }) ?? true {
+            lastTelemetryRefresh = lastTelemetryAt ?? 0
+            refresh()
+        }
         writeProbeSnapshot()
     }
 

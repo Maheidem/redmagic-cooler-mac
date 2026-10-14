@@ -86,6 +86,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var thermal = ThermalMonitor.Reading(thermalState: .nominal, dieTemperatureC: nil)
     /// Latest telemetry frame from the cooler, cleared when the link drops.
     var telemetry: CoolerTelemetry?
+    /// When telemetry last redrew the menu. Some coolers report several times a
+    /// second, and every redraw while the menu is open disturbs the controls.
+    var lastTelemetryRefresh: TimeInterval = 0
     /// Whether the magnetic mount is seated.
     var mountAttached: Bool?
 
@@ -165,10 +168,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         buildStatusItem()
         buildMenu()
 
-        tickTimer = Timer.scheduledTimer(withTimeInterval: Config.Timing.poll,
-                                         repeats: true) { [weak self] _ in
+        // In the common modes, so it keeps running while a menu is open. In the
+        // default mode alone the Mac's temperature, Auto and the plate limit all
+        // froze for as long as the menu was on screen.
+        let ticker = Timer(timeInterval: Config.Timing.poll, repeats: true) { [weak self] _ in
             self?.tick()
         }
+        RunLoop.main.add(ticker, forMode: .common)
+        tickTimer = ticker
 
         EventLogger.record("app start — mode=\(appMode.rawValue) engage=\(autopilot.engageC)°C")
 

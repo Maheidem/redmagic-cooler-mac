@@ -13,7 +13,7 @@ final class CoolingSliderView: PanelRowView {
     /// Fires once, on mouse-up, with the chosen step index.
     var onStep: ((Int) -> Void)?
 
-    private let slider = NSSlider()
+    private let slider = DraggableSlider()
     private let nameLabel = NSTextField(labelWithString: "Off")
 
     /// Matches the panel content inset, which also keeps the slider's thumb
@@ -86,9 +86,11 @@ final class CoolingSliderView: PanelRowView {
         needsDisplay = true
     }
 
-    /// Moves the slider without firing `onStep`.
+    /// Moves the slider without firing `onStep`. Ignored while the user has hold of
+    /// the thumb: a refresh triggered by the cooler's own telemetry would
+    /// otherwise snap it back under their hand.
     func setStep(_ step: Int) {
-        guard !steps.isEmpty else { return }
+        guard !steps.isEmpty, !slider.isDragging else { return }
         apply(step.clamped(to: 0...(steps.count - 1)), notify: false)
     }
 
@@ -102,5 +104,18 @@ final class CoolingSliderView: PanelRowView {
         slider.integerValue = step
         nameLabel.stringValue = steps[step].name
         if notify { onStep?(step) }
+    }
+}
+
+/// An `NSSlider` that knows when it is being dragged. `mouseDown` runs the
+/// tracking loop until the mouse is released, so the flag is true exactly for
+/// the duration of a drag.
+private final class DraggableSlider: NSSlider {
+    private(set) var isDragging = false
+
+    override func mouseDown(with event: NSEvent) {
+        isDragging = true
+        super.mouseDown(with: event)
+        isDragging = false
     }
 }
