@@ -66,44 +66,56 @@ This is the main difference from the 6 Pro, where `0x1011` selects TEC power and
 - `0x1011 = 02` starts cooling at the level held in `0x1012`.
 - `0x1012` is a single **level** byte. The vendor app offers eight levels, the
   bytes below. The cooler spools slowly, so values settle over tens of seconds;
-  the figures are readings of `0x101C` / `0x101D` after settling, stepping up
-  from level 1.
+  the figures are readings of `0x101C` / `0x101D` after holding each level for
+  50 s, stepping up from level 1 (they did not change in the following 6 s).
+  Quicker steps read a level behind, so give any new measurement time.
 
 | Level | Byte | Power | Fan RPM |
 |-------|------|-------|---------|
-| 1 | `2e` | 9 W | ~3,700 |
-| 2 | `34` | 9 W | ~3,500–3,700 |
-| 3 | `3a` | 16 W | ~4,100 |
-| 4 | `40` | 23 W | ~4,200 |
-| 5 | `44` | 26 W | ~4,500 |
-| 6 | `48` | 26 W | ~4,800 |
-| 7 | `4c` | 29 W | ~5,000 |
-| 8 | `50` | 29 W | ~5,100 |
+| 1 | `2e` | 9 W | ~3,550 |
+| 2 | `34` | 16 W | ~4,050 |
+| 3 | `3a` | 23 W | ~4,200 |
+| 4 | `40` | 26 W | ~4,550 |
+| 5 | `44` | 26 W | ~4,950 |
+| 6 | `48` | 29 W | ~4,980 |
+| 7 | `4c` | 31 W | ~5,180 |
+| 8 | `50` | 31 W | ~5,460 |
+
+In free air with nothing against it, the plate reached about −20 °C (raw `0xf2`)
+at the top levels within a minute.
 
 - **Values below `0x2e` are not "lower".** `0x00`, `0x01`, `0x10` and `0x20` all
-  ended at about 32 W and 5,300–5,500 RPM, close to full output. An "off" that
+  ended at about 32 W and 5,300–5,500 RPM, as hard as level 8 or a little harder. An "off" that
   writes fan `0` therefore ramps the cooler up the next time it is switched on.
   The app never writes below `0x2e`.
 - Values above `0x50` were tried (`0x58`, `0x64`) but the results were
   inconclusive because of the slow ramp; the app does not use them.
 - **Diablo mode (`0x1017 = 01`)** reached 37 W and about 6,550 RPM within 12 s,
-  the advertised ~36 W maximum, and was switched off right after. The app does
-  not expose it.
+  the advertised ~36 W maximum. Writing `00` ends it, and moving to a lower level
+  or Off over Bluetooth did the same.
 
 ### How the app maps its controls
 
-The app's ladders (Auto tiers, manual slider) produce a cooling *mode* and a fan
-*percentage*. This device has one axis, so the profile folds both into a level
-byte: each mode zone gets a band, and the fan percentage moves within it over
-the range the app uses for that zone (anything outside is clamped). Every step
-of the manual slider and every Auto tier lands on a different, rising level.
+The app's controls produce a cooling *mode* and a fan *percentage*. This device
+has one axis, so the profile folds both into a level byte: each mode zone gets a
+band, and the fan percentage moves within it over the range the app uses for
+that zone (anything outside is clamped). Auto uses this: every tier lands on a
+different, rising level.
 
 | Zone | Level bytes | Fan speeds mapped | About |
 |------|-------------|-------------------|-------|
-| Low | `2e`–`3a` | 40–80 % | 9–16 W |
-| Medium | `40`–`48` | 60–95 % | 23–26 W |
-| Max | `4c`–`50` | 70–80 % | 29 W |
+| Low | `2e`–`3a` | 40–80 % | 9–23 W |
+| Medium | `40`–`48` | 60–95 % | 26–29 W |
+| Max | `4c`–`50` | 70–80 % | 31 W |
 | Off | `0x1011 = 03`, level `2e` | | idle |
+
+The **manual slider** does not fold anything. It offers the cooler's own steps:
+Off, Level 1 to 8 (exactly the bytes above) and **Diablo**, which is level 8 with
+`0x1017 = 01`. Diablo is manual only: Auto never selects it, every other command
+(including Off, an Auto decision and Turn Off & Quit) writes `0x1017 = 00` along
+with the level, and the 30-second re-assert keeps whichever state was asked for.
+The manual auto-off timer applies to it like any other level. It is not something
+to leave running unattended: the plate goes well below zero.
 
 ---
 

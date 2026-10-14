@@ -40,6 +40,9 @@ struct DeviceProfile {
     let hallUUID: CBUUID
     /// Notify. Periodic telemetry frames, decoded by `makeTelemetryDecoder`.
     let telemetryUUID: CBUUID
+    /// Write. Switches a maximum-output mode on top of the cooling level, for
+    /// models that have one; `nil` for models that don't.
+    let boostUUID: CBUUID?
 
     // ── Command encoding ─────────────────────────────────────────────────────
 
@@ -51,8 +54,21 @@ struct DeviceProfile {
     /// that whenever it turns the cooler off.
     let fanBytes: (CoolingMode, UInt8) -> [UInt8]
 
+    /// Bytes to write to `boostUUID` to switch the boost mode on or off.
+    let boostBytes: (Bool) -> [UInt8]
+
     /// Effect byte of the light characteristic that switches the light off.
     let lightOffEffect: UInt8
+
+    // ── Manual slider ────────────────────────────────────────────────────────
+
+    /// The positions of the manual power slider, lowest first, starting with Off.
+    let manualSteps: [ManualStep]
+    /// The step chosen when Manual is entered with nothing (or Off) remembered:
+    /// entering Manual should visibly do something.
+    let defaultManualStep: Int
+    /// Labels drawn under the slider.
+    let sliderLabels: [SliderLabel]
 
     /// Whether reading the mode and fan characteristics tells the truth about
     /// what the cooler is doing. When false the app keeps its own record of
@@ -81,7 +97,11 @@ struct DeviceProfile {
     /// `write` can find them; the device exposes more (a threshold and an
     /// auto-temp flag for its own automation, mapped in `docs/FINDINGS.md`),
     /// but this app runs its own autopilot and drives none of them.
-    var writableUUIDs: Set<CBUUID> { [coolingModeUUID, fanSpeedUUID, lightModeUUID] }
+    var writableUUIDs: Set<CBUUID> {
+        var uuids: Set<CBUUID> = [coolingModeUUID, fanSpeedUUID, lightModeUUID]
+        if let boostUUID { uuids.insert(boostUUID) }
+        return uuids
+    }
 
     // ── Registry ─────────────────────────────────────────────────────────────
 
@@ -139,9 +159,36 @@ extension DeviceProfile {
         lightModeUUID:   CBUUID(string: "00001013-0000-1000-8000-00805f9b34fb"),
         hallUUID:        CBUUID(string: "00001015-0000-1000-8000-00805f9b34fb"),
         telemetryUUID:   CBUUID(string: "00001016-0000-1000-8000-00805f9b34fb"),
+        boostUUID: nil,
         modeBytes: { [$0.rawValue] },
         fanBytes: { _, percent in [min(percent, 100)] },
+        boostBytes: { _ in [] },
         lightOffEffect: LedEffect.DeviceEffect.off.rawValue,
+        // Mirrors the vendor app's layout (Off, then three sub-steps each within
+        // Low, Medium and Max) so muscle memory carries over. Fan values are
+        // calibrated against an RPM probe rather than being linear percentages;
+        // the firmware's response curve is U-shaped, so e.g. 40 % and 70 % are
+        // ~6 200 and ~7 400 RPM. Changing a number here changes what the
+        // hardware actually does; see `docs/FINDINGS.md` before touching them.
+        manualSteps: [
+            ManualStep(mode: .off,    fanPercent:  0, name: "Off"),
+            ManualStep(mode: .low,    fanPercent: 40, name: "Low ·"),      // ~6 200 RPM
+            ManualStep(mode: .low,    fanPercent: 60, name: "Low ··"),     // ~6 600 RPM
+            ManualStep(mode: .low,    fanPercent: 70, name: "Low"),        // ~7 400 RPM
+            ManualStep(mode: .medium, fanPercent: 60, name: "Medium ·"),   // ~6 600 RPM
+            ManualStep(mode: .medium, fanPercent: 70, name: "Medium ··"),  // ~7 400 RPM
+            ManualStep(mode: .medium, fanPercent: 80, name: "Medium"),     // ~8 200 RPM
+            ManualStep(mode: .max,    fanPercent: 70, name: "Max ·"),      // ~7 400 RPM
+            ManualStep(mode: .max,    fanPercent: 75, name: "Max ··"),     // ~7 700 RPM
+            ManualStep(mode: .max,    fanPercent: 80, name: "Max"),        // ~8 200 RPM
+        ],
+        defaultManualStep: 6,
+        sliderLabels: [
+            SliderLabel(text: "Off", tick: 0, isMajor: false),
+            SliderLabel(text: "Low", tick: 3, isMajor: true),
+            SliderLabel(text: "Med", tick: 6, isMajor: true),
+            SliderLabel(text: "Max", tick: 9, isMajor: true),
+        ],
         readBackReflectsState: true,
         makeTelemetryDecoder: { { data in
             // `[0]=0xAA marker, [2]=cold °C, [3]=hot °C, [7]=ambient °C,
@@ -185,11 +232,13 @@ extension DeviceProfile {
         // discovery skips it and the mount state stays unknown.
         hallUUID:        CBUUID(string: "0000ffff-0000-1000-8000-00805f9b34fb"),
         telemetryUUID:   CBUUID(string: "00001015-0000-1000-8000-00805f9b34fb"),
+        // "Diablo" mode: maximum output, about 37 W.
+        boostUUID:       CBUUID(string: "00001017-0000-1000-8000-00805f9b34fb"),
         modeBytes: { mode in mode.isOn ? [0x02] : [0x03] },
         fanBytes: { mode, percent in
             // Never below the lowest level the vendor app uses: `0x00` and
             // anything under `0x2e` runs the cooler flat out. Each zone gets a
-            // band of the level range (about 9–16 W / 23–26 W / 29 W measured),
+            // band of the level range (about 9–23 W / 26–29 W / 31 W measured),
             // and the requested fan speed moves within it, so the app's ladders
             // stay monotonic on a device with only one control axis. The fan
             // windows are the speeds the Auto tiers and the manual slider use
@@ -209,8 +258,31 @@ extension DeviceProfile {
                 + Int((position * Double(band.upperBound - band.lowerBound)).rounded())
             return [UInt8(level)]
         },
+        boostBytes: { on in [on ? 0x01 : 0x00] },
         // `0x00` is a steady colour here; off is `0x06`.
         lightOffEffect: 0x06,
+        // The vendor app's eight levels (bytes `2e 34 3a 40 44 48 4c 50`), then
+        // Diablo. Each pair below goes through `fanBytes` to exactly that byte.
+        manualSteps: [
+            ManualStep(mode: .off,    fanPercent:  0, name: "Off"),
+            ManualStep(mode: .low,    fanPercent: 40, name: "Level 1"),   // 2e,  9 W
+            ManualStep(mode: .low,    fanPercent: 60, name: "Level 2"),   // 34, 16 W
+            ManualStep(mode: .low,    fanPercent: 80, name: "Level 3"),   // 3a, 23 W
+            ManualStep(mode: .medium, fanPercent: 60, name: "Level 4"),   // 40, 26 W
+            ManualStep(mode: .medium, fanPercent: 78, name: "Level 5"),   // 44, 26 W
+            ManualStep(mode: .medium, fanPercent: 95, name: "Level 6"),   // 48, 29 W
+            ManualStep(mode: .max,    fanPercent: 70, name: "Level 7"),   // 4c, 31 W
+            ManualStep(mode: .max,    fanPercent: 80, name: "Level 8"),   // 50, 31 W
+            ManualStep(mode: .max,    fanPercent: 80, name: "Diablo", boost: true),  // ~37 W
+        ],
+        defaultManualStep: 4,
+        sliderLabels: [
+            SliderLabel(text: "Off", tick: 0, isMajor: false),
+            SliderLabel(text: "1", tick: 1, isMajor: true),
+            SliderLabel(text: "4", tick: 4, isMajor: true),
+            SliderLabel(text: "8", tick: 8, isMajor: true),
+            SliderLabel(text: "Diablo", tick: 9, isMajor: true),
+        ],
         // Idle, the cooler reads `0x1011 = 02` and `0x1012 = 00`, which is not
         // a running state: adopting it would have the heartbeat start the cooler.
         readBackReflectsState: false,

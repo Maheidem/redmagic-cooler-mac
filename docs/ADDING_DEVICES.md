@@ -131,6 +131,12 @@ telemetry arrives as one field per frame, so the decoder is created per
 connection and keeps the latest value of each field. Make sure `fanBytes` is
 safe for `0`, which the app sends whenever it turns the cooler off.
 
+The manual power slider shows whatever the profile lists in `manualSteps`, with
+`sliderLabels` under it, so a model can offer its own levels. If the cooler has a
+separate maximum-output mode (the 8 Pro's Diablo), give it a `boostUUID` and
+`boostBytes`, and mark the step `boost: true`. The app clears boost with every
+command that doesn't ask for it, so it cannot be left on.
+
 ## Step 5 — Verify with the probe scripts
 
 The scripts in [`tools/probe/`](../tools/probe/) automate the tedious part of

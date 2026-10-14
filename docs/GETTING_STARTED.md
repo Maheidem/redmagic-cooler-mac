@@ -81,7 +81,11 @@ support and links to the porting guide.
   the cooler switches off and stays off; it does not hand back to Auto, which
   would simply start it again. Choosing **∞** removes the limit and asks you to
   confirm: a thermoelectric plate held cold for hours condenses moisture onto
-  itself whether or not anyone is at the Mac.
+  itself whether or not anyone is at the Mac. The slider's steps belong to the
+  cooler: on the 6 Pro they are Low, Medium and Max with three sub-steps each;
+  on the Cryo Cooler 8 Pro they are Off, Levels 1 to 8 and **Diablo**, its
+  maximum-output mode (about 37 W). Diablo is only ever chosen by hand, and any
+  other command switches it off.
 - **Cooler effect** changes the cooler's LED mode and colour. The Auto effect
   uses colour as a heat gauge.
 - **Turn Off** stops cooling while keeping the connection available.

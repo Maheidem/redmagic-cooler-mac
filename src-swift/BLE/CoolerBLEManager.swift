@@ -109,6 +109,10 @@ final class CoolerBLEManager: NSObject {
     /// they're updated both by our writes (optimistically) and by read-backs.
     private(set) var mode: CoolingMode = .off
     private(set) var fanPercent: UInt8 = 0
+    /// Whether the maximum-output mode was last asked for, on models that have
+    /// one. Kept so the heartbeat re-asserts it, and cleared by every other
+    /// command so it is never left on by accident.
+    private(set) var boost = false
 
     /// True while we hold a peripheral with a live — or half-open — link worth
     /// tearing down at quit.
@@ -468,18 +472,31 @@ final class CoolerBLEManager: NSObject {
     /// re-deriving the delay — that duplication was the original bug's habitat.
     ///
     /// Turning off forces the fan to 0 regardless of the requested percentage.
-    func apply(mode: CoolingMode, fanPercent: UInt8) {
+    ///
+    /// `boost` defaults to off, so every command that doesn't ask for it (turning
+    /// off, an Auto decision) also clears it. It is written with the fan speed,
+    /// inside the flush window quit waits for.
+    func apply(mode: CoolingMode, fanPercent: UInt8, boost: Bool = false) {
         setMode(mode)
         let target = mode.isOn ? fanPercent : 0
+        let boostTarget = mode.isOn && boost
         DispatchQueue.main.asyncAfter(deadline: .now() + Config.BLE.fanWriteDelay) {
             [weak self] in
             self?.setFanPercent(target, for: mode)
+            self?.setBoost(boostTarget)
         }
     }
 
-    /// Re-asserts the cached mode and fan speed, healing any dropped write.
+    /// Switches the maximum-output mode, on models that have one.
+    private func setBoost(_ on: Bool) {
+        guard let profile, let uuid = profile.boostUUID else { return }
+        boost = on
+        write(profile.boostBytes(on), to: uuid)
+    }
+
+    /// Re-asserts the cached mode, fan speed and boost, healing any dropped write.
     func reassertCurrentSettings() {
-        apply(mode: mode, fanPercent: fanPercent)
+        apply(mode: mode, fanPercent: fanPercent, boost: boost)
     }
 
     /// The effect byte that turns the light off on the connected model.

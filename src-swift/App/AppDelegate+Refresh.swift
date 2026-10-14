@@ -99,9 +99,13 @@ extension AppDelegate {
         // re-deriving the step here would briefly snap the thumb to a
         // neighbouring sub-step. Leave it where the user dropped it and re-sync
         // once the device has settled.
+        coolingSlider.configure(steps: manualProfile.manualSteps,
+                                labels: manualProfile.sliderLabels)
         if !isSwitching {
             coolingSlider.setStep(isManual
-                ? CoolingSliderView.step(matching: ble.mode, fanPercent: ble.fanPercent)
+                ? manualProfile.manualSteps.index(matching: ble.mode,
+                                                  fanPercent: ble.fanPercent,
+                                                  boost: ble.boost)
                 : 0)
         }
         coolingSlider.setEnabled(enabled)
