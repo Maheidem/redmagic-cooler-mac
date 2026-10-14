@@ -33,11 +33,14 @@ extension CoolerBLEManagerDelegate {
 struct CoolerTelemetry {
     /// Cold plate — the face against the Mac.
     let coldC: Int
-    /// Hot side — the fin stack the fan exhausts through.
-    let hotC: Int
-    let ambientC: Int
+    /// Hot side — the fin stack the fan exhausts through. Absent on models
+    /// that report only the plate temperature.
+    let hotC: Int?
+    let ambientC: Int?
     /// Fan speed in RPM, absent on shorter frames from older firmware.
     let fanRPM: Int?
+    /// Power draw in watts, on models that report it.
+    var powerW: Int? = nil
 }
 
 /// Owns the Bluetooth link to the cooler: discovery, connection lifecycle,
@@ -153,6 +156,10 @@ final class CoolerBLEManager: NSObject {
     private var rescanAfterDisconnect = false
 
     private var characteristics: [CBUUID: CBCharacteristic] = [:]
+
+    /// Decodes this link's telemetry frames. Created per connection, because
+    /// some models report one field per frame and the decoder holds the rest.
+    private var decodeTelemetry: ((Data) -> CoolerTelemetry?)?
 
     // ── Permission ───────────────────────────────────────────────────────────
 
@@ -439,14 +446,17 @@ final class CoolerBLEManager: NSObject {
     func setMode(_ mode: CoolingMode) {
         guard let profile else { return }
         self.mode = mode
-        write([mode.rawValue], to: profile.coolingModeUUID)
+        write(profile.modeBytes(mode), to: profile.coolingModeUUID)
     }
 
-    func setFanPercent(_ percent: UInt8) {
+    /// - Parameter mode: the mode this speed belongs to. `apply` passes the mode
+    ///   it just wrote, because a read-back arriving in the meantime can
+    ///   overwrite the cached `self.mode` before a deferred fan write runs.
+    func setFanPercent(_ percent: UInt8, for mode: CoolingMode? = nil) {
         guard let profile else { return }
         let clamped = min(percent, 100)
         fanPercent = clamped
-        write([clamped], to: profile.fanSpeedUUID)
+        write(profile.fanBytes(mode ?? self.mode, clamped), to: profile.fanSpeedUUID)
     }
 
     /// Applies a mode and fan speed together, in the order the cooler expects.
@@ -463,7 +473,7 @@ final class CoolerBLEManager: NSObject {
         let target = mode.isOn ? fanPercent : 0
         DispatchQueue.main.asyncAfter(deadline: .now() + Config.BLE.fanWriteDelay) {
             [weak self] in
-            self?.setFanPercent(target)
+            self?.setFanPercent(target, for: mode)
         }
     }
 
@@ -471,6 +481,9 @@ final class CoolerBLEManager: NSObject {
     func reassertCurrentSettings() {
         apply(mode: mode, fanPercent: fanPercent)
     }
+
+    /// The effect byte that turns the light off on the connected model.
+    var lightOffEffect: UInt8 { profile?.lightOffEffect ?? LedEffect.DeviceEffect.off.rawValue }
 
     /// Writes the light characteristic as `[effect, R, G, B]`.
     ///
@@ -575,6 +588,7 @@ extension CoolerBLEManager: CBCentralManagerDelegate {
         UserDefaults.standard.set(peripheral.identifier.uuidString,
                                   forKey: Config.Key.preferredDevice)
         EventLogger.record("BLE — connected to \(peripheral.name ?? "cooler")")
+        decodeTelemetry = profile.makeTelemetryDecoder()
         setPhase(.discoveringServices)
         peripheral.discoverServices([profile.serviceUUID])
     }
@@ -659,10 +673,12 @@ extension CoolerBLEManager: CBPeripheralDelegate {
 
             if notifying.contains(uuid) {
                 peripheral.setNotifyValue(true, for: characteristic)
-            } else if uuid == profile.coolingModeUUID || uuid == profile.fanSpeedUUID {
-                // Seed the two caches the app actually consults. The light
-                // state is pushed by LedController on every connect, so
-                // reading back what the cooler happens to be showing would
+            } else if profile.readBackReflectsState
+                        && (uuid == profile.coolingModeUUID || uuid == profile.fanSpeedUUID) {
+                // Seed the two caches the app actually consults, unless the
+                // model's read-back is not a true reading (`readBackReflectsState`).
+                // The light state is pushed by LedController on every connect,
+                // so reading back what the cooler happens to be showing would
                 // only cache a value nothing consults.
                 peripheral.readValue(for: characteristic)
             }
@@ -692,7 +708,7 @@ extension CoolerBLEManager: CBPeripheralDelegate {
             delegate?.bleManager(self, didChangeMountAttached: profile.decodeMountAttached(data))
 
         case profile.telemetryUUID:
-            guard let telemetry = profile.decodeTelemetry(data) else { return }
+            guard let telemetry = decodeTelemetry?(data) else { return }
             delegate?.bleManager(self, didReceive: telemetry)
 
         default:

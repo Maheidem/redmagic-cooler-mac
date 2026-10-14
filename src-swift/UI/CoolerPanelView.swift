@@ -381,17 +381,25 @@ final class CoolerPanelView: PanelRowView {
 
     /// Telemetry laid out as evenly spaced cells. A sensor reporting 0 is
     /// reporting "not measured yet", so it shows an em dash rather than 0°.
+    /// Below zero is a real reading (the 8 Pro's cold plate gets there).
     private func telemetryCells() -> [(label: String, value: String)] {
         guard let telemetry = model.telemetry else { return [] }
         func temp(_ celsius: Int) -> String {
-            celsius > 0 ? SystemInfo.formatTemp(celsius, degreeOnly: true) : "—"
+            celsius != 0 ? SystemInfo.formatTemp(celsius, degreeOnly: true) : "—"
         }
         var cells = [(label: String, value: String)]()
         cells.append(("Cold", temp(telemetry.coldC)))
-        cells.append(("Hot", temp(telemetry.hotC)))
-        cells.append(("Ambient", SystemInfo.formatTemp(telemetry.ambientC, degreeOnly: true)))
+        if let hot = telemetry.hotC {
+            cells.append(("Hot", temp(hot)))
+        }
+        if let ambient = telemetry.ambientC {
+            cells.append(("Ambient", SystemInfo.formatTemp(ambient, degreeOnly: true)))
+        }
         if let rpm = telemetry.fanRPM {
             cells.append(("RPM", rpm > 0 ? "\(rpm)" : "—"))
+        }
+        if let watts = telemetry.powerW {
+            cells.append(("Power", "\(watts) W"))
         }
         return cells
     }
