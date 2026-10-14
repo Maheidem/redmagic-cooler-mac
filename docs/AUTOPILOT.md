@@ -69,27 +69,41 @@ For the default `E = 45 °C`, the tier boundaries are 45, 55, 65, and 75 °C.
 ## Custom curve
 
 **Settings → Auto Curve…** replaces that derived ladder with a temperature of
-your own for each of the four cooling tiers (low, med-low, medium, max):
+your own for **every stage of your cooler**. The stages are the steps of the
+cooler's own manual slider after Off, so Auto can use all of them: the Cryo
+Cooler 8 Pro has nine (Level 1 to 8, then Diablo) and the VC Cooler 6 Pro has
+nine (Low · to Max).
 
-- Tick **Use a custom curve**, type a temperature for each tier, and Save. The
+- Tick **Use a custom curve**, type a temperature for each stage, and Save. The
   fields are in your system temperature unit.
-- Each tier must be at least 1 °C hotter than the one before, and all must fall
+- Each stage must be at least 1 °C hotter than the one before, and all must fall
   between 30 and 100 °C. The window says what is wrong and keeps Save disabled
   until the curve is valid.
-- **Reset** puts back the ladder the threshold slider would give. Unticking the
-  box returns to that ladder and keeps your values for next time.
+- **Reset** fills in an even spread from the threshold slider's temperature up to
+  95 °C, last stage included. Unticking the box returns to the ladder and keeps
+  your values for next time.
 - While a custom curve is on, the threshold slider is greyed and the row reads
-  **Custom curve** with the temperature where the first tier engages.
+  **Custom curve** with the temperature where the first stage engages.
 
-Everything else is unchanged: the tiers still map to the same cooling levels,
-the 5 °C release margin and 15-second dwell still apply, the safety floor still
-applies, and the LED heat gauge now runs from 10 °C below the first tier to red
-at the last. A curve is only about *when* each tier engages, not how hard it
-cools; the fan speeds stay tuned to the cooler model.
+A custom curve is literal. Below the first temperature the cooler is **off**, and
+each stage engages when the Mac reaches its temperature and is released once the
+Mac is below it. There is no 5 °C hold zone, which belongs to the default ladder.
+The 15-second cool-down delay still applies, and it still steps down one stage at
+a time, so a reading hovering on a threshold does not switch the cooler on and
+off every few seconds.
 
-The TEC and fan are independent cooler controls. Fan percentages are not
-linear in RPM; these values were selected from hardware probes of the
-firmware's response curve. See [`FINDINGS.md`](FINDINGS.md).
+Other things that stay the same: the safety floor applies (under `serious`
+thermal pressure Auto goes at least three quarters of the way up your stages, and
+under `critical` to the last one), and the LED heat gauge runs from 10 °C below the
+first stage to red at the last.
+
+The last stage is whatever your cooler's top step is. On the 8 Pro that is
+**Diablo** (about 37 W), so a curve that reaches it will use it. Reset puts it at
+95 °C; lower it only if you want that.
+
+A curve has one point per stage, so it belongs to a cooler with that many. If you
+connect a cooler with a different number of stages, the ladder from the threshold
+slider is used until you set a curve for it.
 
 ## Fast to turn on, slow to turn off
 

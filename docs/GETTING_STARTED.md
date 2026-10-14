@@ -71,8 +71,8 @@ support and links to the porting guide.
 - **Auto** follows the Mac's temperature. The engage-threshold slider chooses
   when cooling begins; higher power tiers are derived from that value. The
   detailed ladder and cooldown behaviour are in [`AUTOPILOT.md`](AUTOPILOT.md).
-- **Settings → Auto Curve…** sets your own temperature for each cooling tier
-  instead of the single threshold, and **Settings → Temperature Source…** picks
+- **Settings → Auto Curve…** sets your own temperature for each stage of your
+  cooler instead of the single threshold, and **Settings → Temperature Source…** picks
   which Mac sensor Auto mode follows. Both are described in
   [`AUTOPILOT.md`](AUTOPILOT.md).
 - **Manual** holds the level selected with the power slider until you change it.

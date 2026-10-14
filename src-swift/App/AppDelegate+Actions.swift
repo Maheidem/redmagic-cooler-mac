@@ -76,22 +76,38 @@ extension AppDelegate {
         window.onSave = { [weak self] in self?.applyCustomCurve(enabled: $0, temperaturesC: $1) }
         autoCurveWindow = window
 
+        // One stage per step of the connected cooler, so the curve can use all
+        // of them: the 8 Pro's eight levels and Diablo, or the 6 Pro's nine.
+        let stages = activeProfile.curveStages
         let saved = (defaults.array(forKey: Config.Key.customCurveC) as? [Double])
-            .flatMap { AutopilotPolicy.isValidCurve($0) ? $0 : nil }
-        let inUse = autopilot.customCurveC
-        let fallback = AutopilotPolicy.defaultCurve(engageC: autopilot.engageC)
-        window.show(enabled: inUse != nil,
-                    curveC: inUse ?? saved ?? fallback,
+            .flatMap { AutopilotPolicy.isValidCurve($0, stages: stages.count) ? $0 : nil }
+        let fallback = AutopilotPolicy.spreadCurve(engageC: autopilot.engageC, stages: stages.count)
+        window.show(stageNames: stages.map(\.name),
+                    enabled: autopilot.customCurveC != nil,
+                    curveC: autopilot.customCurveC ?? saved ?? fallback,
                     defaultCurveC: fallback)
+    }
+
+    /// Puts the saved custom curve in force, if one is switched on and fits the
+    /// connected cooler (a curve has one point per stage, so it belongs to a
+    /// model with that many). Otherwise the ladder from the threshold slider
+    /// applies. Called at launch, on connect and after a save, since each can
+    /// change which cooler it is for.
+    func syncCustomCurve() {
+        let defaults = UserDefaults.standard
+        let saved = defaults.array(forKey: Config.Key.customCurveC) as? [Double]
+        let usable = defaults.bool(forKey: Config.Key.customCurveOn)
+            && saved.map { AutopilotPolicy.isValidCurve($0, stages: activeProfile.curveStages.count) } == true
+        autopilot.setCustomCurve(usable ? saved : nil)
     }
 
     func applyCustomCurve(enabled: Bool, temperaturesC: [Double]) {
         let defaults = UserDefaults.standard
         defaults.set(enabled, forKey: Config.Key.customCurveOn)
-        if AutopilotPolicy.isValidCurve(temperaturesC) {
+        if AutopilotPolicy.isValidCurve(temperaturesC, stages: activeProfile.curveStages.count) {
             defaults.set(temperaturesC, forKey: Config.Key.customCurveC)
         }
-        autopilot.setCustomCurve(enabled ? temperaturesC : nil)
+        syncCustomCurve()
         let summary = temperaturesC.map { String(format: "%.0f", $0) }.joined(separator: "/")
         EventLogger.record(enabled ? "auto curve → custom \(summary)°C" : "auto curve → default ladder")
         if appMode == .auto { runAutopilot() }

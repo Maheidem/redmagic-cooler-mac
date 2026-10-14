@@ -141,6 +141,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ble = CoolerBLEManager()
         ble.delegate = self
         led = LedController(ble: ble)
+        syncCustomCurve()
 
         // Built before the menu, which wires a banner straight to them. A
         // noticed release starts installing at once — the banner narrates the
@@ -196,9 +197,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         autopilot = AutopilotPolicy(engageC: engageC)
         defaults.set(autopilot.engageC, forKey: Config.Key.engageC)
-        if defaults.bool(forKey: Config.Key.customCurveOn) {
-            autopilot.setCustomCurve(defaults.array(forKey: Config.Key.customCurveC) as? [Double])
-        }
         temperatureSource = ThermalMonitor.Source(
             stored: defaults.string(forKey: Config.Key.temperatureSource))
     }
@@ -247,12 +245,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let decision = autopilot.evaluate(thermalState: thermal.thermalState,
                                           dieC: thermal.dieTemperatureC,
                                           now: Date().timeIntervalSince1970)
-        let tier = decision.tier
-        let fan = activeProfile.autoFanPercents?[autopilot.tierIndex] ?? tier.fanPercent
-        guard tier.mode != ble.mode || fan != ble.fanPercent else { return }
+        let target = autoTarget(forStep: decision.index)
+        guard target.mode != ble.mode || target.fanPercent != ble.fanPercent
+                || target.boost != ble.boost else { return }
 
-        EventLogger.record("\(decision.reason)  → cooler \(tier.label), fan \(fan)%")
-        ble.apply(mode: tier.mode, fanPercent: fan)
+        EventLogger.record("\(decision.reason)  → cooler \(target.label), fan \(target.fanPercent)%")
+        ble.apply(mode: target.mode, fanPercent: target.fanPercent, boost: target.boost)
+    }
+
+    /// What to send for one step of the autopilot: with a custom curve, the
+    /// matching step of the connected cooler's own slider; otherwise a tier of the
+    /// default ladder (with the model's fan speed for it, if it has its own).
+    private func autoTarget(forStep index: Int)
+        -> (mode: CoolingMode, fanPercent: UInt8, boost: Bool, label: String) {
+        let steps = activeProfile.manualSteps
+        if autopilot.customCurveC != nil, steps.indices.contains(index) {
+            let step = steps[index]
+            return (step.mode, step.fanPercent, step.boost, step.name)
+        }
+        let tier = AutopilotPolicy.tiers[min(index, AutopilotPolicy.tiers.count - 1)]
+        let fan = activeProfile.autoFanPercents?[index] ?? tier.fanPercent
+        return (tier.mode, fan, false, tier.label)
     }
 
     // ── Switching lockout ────────────────────────────────────────────────────

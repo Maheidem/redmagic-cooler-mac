@@ -3,12 +3,15 @@ import Foundation
 /// Decides how hard to cool, from Mac die temperature and macOS thermal
 /// pressure.
 ///
-/// The policy is a five-step ladder (`Tier.off` … `Tier.max`). Two mechanisms
-/// keep it from oscillating around a threshold:
+/// The policy is a five-step ladder (`Tier.off` … `Tier.max`), or, when the user
+/// sets a custom curve, one stage per step of the connected cooler. Two
+/// mechanisms keep it from oscillating around a threshold:
 ///
-///  * **Hysteresis** — a tier only releases once the temperature falls
-///    `Config.Autopilot.hysteresisC` *below* the point that engaged it.
-///  * **Dwell** — after that, the temperature must stay low for
+///  * **Hysteresis** — on the default ladder a tier only releases once the
+///    temperature falls `Config.Autopilot.hysteresisC` *below* the point that
+///    engaged it. A custom curve has none: below a stage's temperature the
+///    stage is released.
+///  * **Dwell** — the temperature must stay low for
 ///    `Config.Autopilot.cooldownDwell` before stepping down, and steps down one
 ///    tier at a time rather than dropping straight to the target.
 ///
@@ -39,7 +42,9 @@ final class AutopilotPolicy {
 
     /// Result of one evaluation.
     struct Decision {
-        let tier: Tier
+        /// The step to hold: 0 is off, and 1… are the ladder's tiers (see
+        /// `tiers`) or, with a custom curve, the stages of the cooler's steps.
+        let index: Int
         /// Human-readable justification, written to the event log on a change.
         let reason: String
     }
@@ -52,12 +57,19 @@ final class AutopilotPolicy {
     private(set) var engageC: Double
 
     private let dwell: TimeInterval
-    private let hysteresisC: Double
+    private let ladderHysteresisC: Double
 
-    /// A user-defined engage temperature for each of the four cooling tiers,
+    /// A user-defined engage temperature for each stage of the cooler,
     /// replacing the ladder derived from `engageC`. `nil` means "use the
     /// ladder". Always valid when set — see `isValidCurve`.
     private(set) var customCurveC: [Double]?
+
+    /// The release margin in force: none on a custom curve, so a stage lets go
+    /// as soon as the Mac is below its temperature.
+    private var hysteresisC: Double { customCurveC == nil ? ladderHysteresisC : 0 }
+
+    /// The highest step, which the safety floor is measured against.
+    private var floorTop: Int { engagePoints.count }
 
     /// Engage temperature for each tier index ≥ 1, ascending.
     private var engagePoints: [(temperatureC: Double, tierIndex: Int)] = []
@@ -82,7 +94,7 @@ final class AutopilotPolicy {
          dwell: TimeInterval = Config.Autopilot.cooldownDwell,
          hysteresisC: Double = Config.Autopilot.hysteresisC) {
         self.dwell = dwell
-        self.hysteresisC = hysteresisC
+        self.ladderHysteresisC = hysteresisC
         self.engageC = engageC
         configure(engageC: engageC)
     }
@@ -94,22 +106,44 @@ final class AutopilotPolicy {
         configure(engageC: celsius)
     }
 
-    /// Replaces the ladder with explicit engage temperatures for the four
-    /// tiers, or restores it with `nil`. An invalid curve is ignored, so a bad
-    /// saved value can never leave the ladder out of order.
+    /// Replaces the ladder with explicit engage temperatures, one per stage of
+    /// the cooler, or restores it with `nil`. An invalid curve is ignored, so a
+    /// bad saved value can never leave the stages out of order.
     func setCustomCurve(_ temperaturesC: [Double]?) {
-        customCurveC = temperaturesC.flatMap { Self.isValidCurve($0) ? $0 : nil }
+        if let temperaturesC, Self.isValidCurve(temperaturesC, stages: temperaturesC.count) {
+            customCurveC = temperaturesC
+        } else {
+            customCurveC = nil
+        }
+        // The old stage no longer means what it did.
+        tierIndex = 0
         configure(engageC: engageC)
     }
 
-    /// Whether `temperaturesC` is a usable curve: one point per cooling tier,
-    /// each inside the allowed range and each at least a degree above the one
-    /// before it, so the tiers engage in order.
-    static func isValidCurve(_ temperaturesC: [Double]) -> Bool {
-        guard temperaturesC.count == tiers.count - 1 else { return false }
+    /// Whether `temperaturesC` is a usable curve for a cooler with `stages`
+    /// steps above Off: one point per stage, each inside the allowed range and
+    /// each at least a degree above the one before it, so the stages engage in
+    /// order.
+    static func isValidCurve(_ temperaturesC: [Double], stages: Int) -> Bool {
+        guard stages > 0, temperaturesC.count == stages else { return false }
         let bounds = Config.Autopilot.curveMinC...Config.Autopilot.curveMaxC
         guard temperaturesC.allSatisfy({ bounds.contains($0) }) else { return false }
         return zip(temperaturesC, temperaturesC.dropFirst()).allSatisfy { $1 - $0 >= 1 }
+    }
+
+    /// A starting curve for a cooler with `stages` steps above Off: every stage,
+    /// the last included, spread evenly from `engageC` up to 95 °C. Stages are
+    /// always at least a degree apart, so a high start with many stages runs
+    /// past 95 °C rather than producing two equal temperatures.
+    static func spreadCurve(engageC: Double, stages: Int) -> [Double] {
+        let engage = clampEngage(engageC)
+        guard stages > 1 else { return [engage] }
+        var curve = [Double]()
+        for index in 0..<stages {
+            let even = engage + (Double(index) * (95 - engage) / Double(stages - 1)).rounded()
+            curve.append(min(max(even, (curve.last ?? even - 1) + 1), Config.Autopilot.curveMaxC))
+        }
+        return curve
     }
 
     /// The ladder derived from a single engage point: steps 10 °C apart, with
@@ -173,13 +207,13 @@ final class AutopilotPolicy {
 
         let temperature = dieC.map { String(format: "%.0f°C", $0) } ?? "temp ?"
         let easing = (target < tierIndex && coolingSince != nil) ? " — easing down soon" : ""
-        return Decision(tier: Self.tiers[tierIndex],
+        return Decision(index: tierIndex,
                         reason: "Mac \(temperature) (\(thermalState.rawValue))\(easing)")
     }
 
     /// The tier the current conditions call for, before dwell/hysteresis smoothing.
     private func targetTierIndex(thermalState: ThermalState, dieC: Double?) -> Int {
-        max(thermalState.tierFloor, temperatureTierIndex(for: dieC))
+        max(thermalState.floor(top: floorTop), temperatureTierIndex(for: dieC))
     }
 
     /// Highest tier whose engage point the temperature has reached, with

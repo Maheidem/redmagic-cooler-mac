@@ -113,11 +113,13 @@ cooler's gentlest level.
 
 The **manual slider** does not fold anything. It offers the cooler's own steps:
 Off, Level 1 to 8 (exactly the bytes above) and **Diablo**, which is level 8 with
-`0x1017 = 01`. Diablo is manual only: Auto never selects it, every other command
-(including Off, an Auto decision and Turn Off & Quit) writes `0x1017 = 00` along
-with the level, and the 30-second re-assert keeps whichever state was asked for.
-The manual auto-off timer applies to it like any other level. It is not something
-to leave running unattended: the plate goes well below zero.
+`0x1017 = 01`. Every command that doesn't ask for it (Off, Turn Off & Quit, and
+any Auto decision that isn't the Diablo stage) writes `0x1017 = 00` along with the
+level, and the 30-second re-assert keeps whichever state was asked for. The default
+Auto ladder never reaches it; a custom Auto curve has Diablo as its last stage and
+uses it if the Mac gets that hot. The manual auto-off timer applies to it like any
+other level. It is not something to leave running unattended: the plate goes well
+below zero.
 
 ---
 

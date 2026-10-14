@@ -1,14 +1,17 @@
 import AppKit
 
-/// A small window for setting the temperature at which each cooling tier of
-/// Auto mode engages, in place of the ladder derived from the threshold slider.
+/// A small window for setting the temperature at which each stage of the
+/// connected cooler engages in Auto mode, in place of the ladder derived from
+/// the threshold slider.
 ///
-/// Values are shown and typed in the user's temperature unit and handed back in
-/// °C, which is what the autopilot and the saved setting use.
+/// There is one row per step of the cooler's own slider after Off (the 8 Pro's
+/// eight levels and Diablo, say), so Auto can use every one. Values are shown
+/// and typed in the user's temperature unit and handed back in °C, which is what
+/// the autopilot and the saved setting use.
 final class AutoCurveWindow: NSObject, NSWindowDelegate, NSTextFieldDelegate {
 
-    /// Called with whether the curve is switched on and the four tier
-    /// temperatures in °C. The temperatures are valid whenever the curve is on.
+    /// Called with whether the curve is switched on and one temperature in °C per
+    /// stage. The temperatures are valid whenever the curve is on.
     var onSave: ((_ enabled: Bool, _ temperaturesC: [Double]) -> Void)?
 
     private let unit = SystemInfo.temperatureUnit()
@@ -16,19 +19,22 @@ final class AutoCurveWindow: NSObject, NSWindowDelegate, NSTextFieldDelegate {
     private let enabledBox = NSButton(checkboxWithTitle: "Use a custom curve",
                                       target: nil, action: nil)
     private var fields = [NSTextField]()
+    private var stageNames = [String]()
     private let message = NSTextField(wrappingLabelWithString: "")
     private let saveButton = NSButton(title: "Save", target: nil, action: nil)
     private var defaultCurveC = [Double]()
     private var savedCurveC = [Double]()
 
     /// - Parameters:
+    ///   - stageNames: the connected cooler's steps above Off, lowest first.
     ///   - enabled: whether a custom curve is currently in use.
-    ///   - curveC: the curve to show: the saved one, or the ladder in effect.
+    ///   - curveC: the curve to show, one temperature per stage.
     ///   - defaultCurveC: what Reset puts back.
-    func show(enabled: Bool, curveC: [Double], defaultCurveC: [Double]) {
+    func show(stageNames: [String], enabled: Bool, curveC: [Double], defaultCurveC: [Double]) {
+        self.stageNames = stageNames
         self.defaultCurveC = defaultCurveC
         savedCurveC = curveC
-        if window == nil { buildWindow() }
+        buildWindow()
 
         enabledBox.state = enabled ? .on : .off
         fill(with: curveC)
@@ -41,19 +47,21 @@ final class AutoCurveWindow: NSObject, NSWindowDelegate, NSTextFieldDelegate {
 
     // ── Window ───────────────────────────────────────────────────────────────
 
+    /// Rebuilt on every show, because the stages belong to whichever cooler is
+    /// connected.
     private func buildWindow() {
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 330),
-                              styleMask: [.titled, .closable],
-                              backing: .buffered, defer: false)
+        let window = self.window ?? NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 300),
+                                             styleMask: [.titled, .closable],
+                                             backing: .buffered, defer: false)
         window.title = "Auto Curve"
         window.isReleasedWhenClosed = false
         window.delegate = self
 
         let intro = NSTextField(wrappingLabelWithString:
-            "Auto mode starts cooling at the first temperature and steps up as the Mac "
-            + "gets hotter. A tier releases once the Mac has stayed "
-            + "\(delta(Config.Autopilot.hysteresisC)) below it for "
-            + "\(Int(Config.Autopilot.cooldownDwell)) seconds.")
+            "Auto mode steps through your cooler's stages as the Mac gets hotter. A stage "
+            + "engages when the Mac reaches its temperature and is released "
+            + "\(Int(Config.Autopilot.cooldownDwell)) seconds after the Mac drops below it. "
+            + "Below the first temperature the cooler is off.")
         intro.font = .systemFont(ofSize: 11)
         intro.textColor = .secondaryLabelColor
         intro.preferredMaxLayoutWidth = 360
@@ -61,11 +69,10 @@ final class AutoCurveWindow: NSObject, NSWindowDelegate, NSTextFieldDelegate {
         enabledBox.target = self
         enabledBox.action = #selector(toggled)
 
-        let tierNames = AutopilotPolicy.tiers.dropFirst().map { $0.label }
+        fields = []
         var rows = [NSView]()
-        for name in tierNames {
-            let title = NSTextField(labelWithString: name.prefix(1).uppercased() + name.dropFirst())
-            title.frame.size.width = 90
+        for name in stageNames {
+            let title = NSTextField(labelWithString: name)
             title.widthAnchor.constraint(equalToConstant: 90).isActive = true
 
             let field = NSTextField()
@@ -96,9 +103,9 @@ final class AutoCurveWindow: NSObject, NSWindowDelegate, NSTextFieldDelegate {
         let stack = NSStackView(views: [intro, enabledBox] + rows + [message, buttons])
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = 12
+        stack.spacing = 10
         stack.edgeInsets = NSEdgeInsets(top: 20, left: 20, bottom: 20, right: 20)
-        stack.setCustomSpacing(18, after: intro)
+        stack.setCustomSpacing(16, after: intro)
         buttons.translatesAutoresizingMaskIntoConstraints = false
         buttons.widthAnchor.constraint(equalToConstant: 360).isActive = true
 
@@ -133,7 +140,7 @@ final class AutoCurveWindow: NSObject, NSWindowDelegate, NSTextFieldDelegate {
         }
     }
 
-    /// The four fields as °C, or `nil` if any is not a number.
+    /// The fields as °C, or `nil` if any is not a number.
     private func typedCurveC() -> [Double]? {
         let values = fields.compactMap {
             Double($0.stringValue.trimmingCharacters(in: .whitespaces))
@@ -156,21 +163,22 @@ final class AutoCurveWindow: NSObject, NSWindowDelegate, NSTextFieldDelegate {
             return
         }
         guard let curve = typedCurveC() else {
-            message.stringValue = "Enter a number for every tier."
+            message.stringValue = "Enter a number for every stage."
             message.textColor = .systemRed
             saveButton.isEnabled = false
             return
         }
-        if AutopilotPolicy.isValidCurve(curve) {
+        if AutopilotPolicy.isValidCurve(curve, stages: fields.count) {
             message.stringValue = "Cooling starts at "
-                + SystemInfo.formatTemp(curve[0]) + " and reaches Max at "
-                + SystemInfo.formatTemp(curve[3]) + "."
+                + SystemInfo.formatTemp(curve[0]) + " and reaches "
+                + (stageNames.last ?? "the last stage") + " at "
+                + SystemInfo.formatTemp(curve[curve.count - 1]) + "."
             message.textColor = .secondaryLabelColor
             saveButton.isEnabled = true
         } else {
             let low = SystemInfo.formatTemp(Config.Autopilot.curveMinC)
             let high = SystemInfo.formatTemp(Config.Autopilot.curveMaxC)
-            message.stringValue = "Each tier must be hotter than the one before it, by at least "
+            message.stringValue = "Each stage must be hotter than the one before it, by at least "
                 + delta(1) + ", and between \(low) and \(high)."
             message.textColor = .systemRed
             saveButton.isEnabled = false
@@ -190,7 +198,7 @@ final class AutoCurveWindow: NSObject, NSWindowDelegate, NSTextFieldDelegate {
 
     @objc private func save() {
         let on = enabledBox.state == .on
-        if let curve = typedCurveC(), AutopilotPolicy.isValidCurve(curve) {
+        if let curve = typedCurveC(), AutopilotPolicy.isValidCurve(curve, stages: fields.count) {
             onSave?(on, curve)
         } else if !on {
             // Switching the curve off needs no valid values; keep the last good ones.

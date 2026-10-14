@@ -70,6 +70,9 @@ struct DeviceProfile {
     /// Labels drawn under the slider.
     let sliderLabels: [SliderLabel]
 
+    /// The stages of a custom Auto curve: one per slider step above Off.
+    var curveStages: [ManualStep] { Array(manualSteps.dropFirst()) }
+
     /// The fan speed Auto mode sends for each tier (off, low, med-low, medium,
     /// max), for models where the autopilot's own values don't land well on the
     /// cooler's range. `nil` uses each tier's own fan speed.

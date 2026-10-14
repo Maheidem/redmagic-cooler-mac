@@ -19,6 +19,8 @@ extension AppDelegate: CoolerBLEManagerDelegate {
             // Seed the telemetry clock at connect, so a device that never sends
             // a frame still registers as silent rather than as "no data yet".
             lastTelemetryAt = Date().timeIntervalSince1970
+            // The curve has one point per stage of the cooler it was made for.
+            syncCustomCurve()
             onConnected()
         } else {
             // Stale telemetry is worse than none — it would keep showing the
