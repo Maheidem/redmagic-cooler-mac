@@ -70,6 +70,11 @@ struct DeviceProfile {
     /// Labels drawn under the slider.
     let sliderLabels: [SliderLabel]
 
+    /// The fan speed Auto mode sends for each tier (off, low, med-low, medium,
+    /// max), for models where the autopilot's own values don't land well on the
+    /// cooler's range. `nil` uses each tier's own fan speed.
+    let autoFanPercents: [UInt8]?
+
     /// Whether reading the mode and fan characteristics tells the truth about
     /// what the cooler is doing. When false the app keeps its own record of
     /// what it last asked for, rather than adopting the device's values and
@@ -189,6 +194,7 @@ extension DeviceProfile {
             SliderLabel(text: "Med", tick: 6, isMajor: true),
             SliderLabel(text: "Max", tick: 9, isMajor: true),
         ],
+        autoFanPercents: nil,
         readBackReflectsState: true,
         makeTelemetryDecoder: { { data in
             // `[0]=0xAA marker, [2]=cold °C, [3]=hot °C, [7]=ambient °C,
@@ -283,6 +289,10 @@ extension DeviceProfile {
             SliderLabel(text: "8", tick: 8, isMajor: true),
             SliderLabel(text: "Diablo", tick: 9, isMajor: true),
         ],
+        // Auto's four tiers on levels 1, 2, 4 and 8 (about 9, 16, 26 and 31 W), so
+        // its gentlest tier is the cooler's gentlest level. Sent through
+        // `fanBytes` with the tier's own mode, like the slider's steps.
+        autoFanPercents: [0, 40, 60, 60, 80],
         // Idle, the cooler reads `0x1011 = 02` and `0x1012 = 00`, which is not
         // a running state: adopting it would have the heartbeat start the cooler.
         readBackReflectsState: false,

@@ -99,8 +99,10 @@ at the top levels within a minute.
 The app's controls produce a cooling *mode* and a fan *percentage*. This device
 has one axis, so the profile folds both into a level byte: each mode zone gets a
 band, and the fan percentage moves within it over the range the app uses for
-that zone (anything outside is clamped). Auto uses this: every tier lands on a
-different, rising level.
+that zone (anything outside is clamped). Every Auto tier lands on a different,
+rising level, and the profile sends Auto's four tiers as **levels 1, 2, 4 and 8**
+(about 9, 16, 26 and 31 W) through `autoFanPercents`, so the gentlest tier is the
+cooler's gentlest level.
 
 | Zone | Level bytes | Fan speeds mapped | About |
 |------|-------------|-------------------|-------|

@@ -248,10 +248,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                           dieC: thermal.dieTemperatureC,
                                           now: Date().timeIntervalSince1970)
         let tier = decision.tier
-        guard tier.mode != ble.mode || tier.fanPercent != ble.fanPercent else { return }
+        let fan = activeProfile.autoFanPercents?[autopilot.tierIndex] ?? tier.fanPercent
+        guard tier.mode != ble.mode || fan != ble.fanPercent else { return }
 
-        EventLogger.record("\(decision.reason)  → cooler \(tier.label), fan \(tier.fanPercent)%")
-        ble.apply(mode: tier.mode, fanPercent: tier.fanPercent)
+        EventLogger.record("\(decision.reason)  → cooler \(tier.label), fan \(fan)%")
+        ble.apply(mode: tier.mode, fanPercent: fan)
     }
 
     // ── Switching lockout ────────────────────────────────────────────────────

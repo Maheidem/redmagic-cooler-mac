@@ -30,8 +30,8 @@ extension AppDelegate {
             // Off — never set, or left off last time — fall back to a mid step
             // rather than switching to a mode that does nothing.
             var step = UserDefaults.standard.object(forKey: Config.Key.manualStep) as? Int
-                ?? manualProfile.defaultManualStep
-            if step <= 0 { step = manualProfile.defaultManualStep }
+                ?? activeProfile.defaultManualStep
+            if step <= 0 { step = activeProfile.defaultManualStep }
             EventLogger.record("switch → manual")
             applyManualStep(step, alreadySwitching: true)
         }
@@ -48,9 +48,9 @@ extension AppDelegate {
         refresh()
     }
 
-    /// The profile whose slider steps apply: the connected model's, or the 6
-    /// Pro's before any is chosen, so the slider always has a layout to show.
-    var manualProfile: DeviceProfile { ble.profile ?? .vcCooler6Pro }
+    /// The profile of the connected model, or the 6 Pro's before any is chosen,
+    /// so the slider always has a layout to show.
+    var activeProfile: DeviceProfile { ble.profile ?? .vcCooler6Pro }
 
     // ── Temperature source and Auto curve ────────────────────────────────────
 
@@ -108,7 +108,7 @@ extension AppDelegate {
         }
         // Persist the clamped index too, so a bad value can't round-trip
         // through UserDefaults and come back out of range.
-        let steps = manualProfile.manualSteps
+        let steps = activeProfile.manualSteps
         let index = index.clamped(to: 0...(steps.count - 1))
         let step = steps[index]
 
