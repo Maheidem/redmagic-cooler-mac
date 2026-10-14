@@ -47,6 +47,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var turnOffQuitRow: MenuActionRow!
     var autoCurveRow: MenuActionRow!
     var temperatureSourceRow: MenuActionRow!
+    var plateLimitRow: MenuActionRow!
     var skipUpdateRow: MenuActionRow!
 
     /// The menu items wrapping those rows, plus the plain items whose
@@ -73,6 +74,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var temperatureSource = ThermalMonitor.Source.dieAverage
     var temperatureSourceWindow: TemperatureSourceWindow?
     var autoCurveWindow: AutoCurveWindow?
+
+    /// Holds cooling back while the cold plate is below the user's limit, so a
+    /// cooler left running does not take it far under the room's dew point.
+    var plateGuard = PlateGuard()
+    var plateLimitOn = true
+    var plateLimitC = Config.PlateLimit.defaultC
+    var plateLimitWindow: PlateLimitWindow?
 
     /// Latest thermal sample, refreshed each tick.
     var thermal = ThermalMonitor.Reading(thermalState: .nominal, dieTemperatureC: nil)
@@ -199,6 +207,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         defaults.set(autopilot.engageC, forKey: Config.Key.engageC)
         temperatureSource = ThermalMonitor.Source(
             stored: defaults.string(forKey: Config.Key.temperatureSource))
+        plateLimitOn = defaults.object(forKey: Config.Key.plateLimitOn) as? Bool ?? true
+        plateLimitC = (defaults.object(forKey: Config.Key.plateLimitC) as? Double
+            ?? Config.PlateLimit.defaultC)
+            .clamped(to: Config.PlateLimit.minC...Config.PlateLimit.maxC)
     }
 
     private func buildStatusItem() {
@@ -217,6 +229,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         handlePendingProbeCommand()
         thermal = ThermalMonitor.read(source: temperatureSource)
         updateSwitchMonitor()
+        updatePlateGuard()
         expireManualTimerIfDue()
 
         if appMode == .auto, tickCount.isMultiple(of: Config.Timing.autopilotEveryTicks) {
@@ -246,8 +259,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                           dieC: thermal.dieTemperatureC,
                                           now: Date().timeIntervalSince1970)
         let target = autoTarget(forStep: decision.index)
-        guard target.mode != ble.mode || target.fanPercent != ble.fanPercent
-                || target.boost != ble.boost else { return }
+        // Against what was asked for, not what was sent: the plate limit can hold
+        // the sent level lower, and that must not look like a change to make.
+        guard target.mode != ble.requested.mode || target.fanPercent != ble.requested.fanPercent
+                || target.boost != ble.requested.boost else { return }
 
         EventLogger.record("\(decision.reason)  → cooler \(target.label), fan \(target.fanPercent)%")
         ble.apply(mode: target.mode, fanPercent: target.fanPercent, boost: target.boost)

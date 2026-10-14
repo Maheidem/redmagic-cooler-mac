@@ -46,6 +46,8 @@ enum Config {
         static let customCurveOn   = "CustomCurveEnabled"   // Bool
         static let customCurveC    = "CustomCurveTempsC"    // [Double], 4 °C values
         static let temperatureSource = "TemperatureSource"  // ThermalMonitor.Source.stored
+        static let plateLimitOn    = "PlateLimitEnabled"    // Bool, default true
+        static let plateLimitC     = "PlateLimitC"          // Double, °C
         // Read only when migrating settings from builds with Standard/Custom.
         static let legacyAutoProfile = "AutoProfile"
         static let legacyCustomEngageC = "CustomEngageTempC"
@@ -140,6 +142,20 @@ enum Config {
         /// the slider's, since each tier is set on its own.
         static let curveMinC: Double = 30.0
         static let curveMaxC: Double = 100.0
+    }
+
+    // ── Cold plate limit ─────────────────────────────────────────────────────
+
+    /// The plate temperature below which cooling is held back (see `PlateGuard`).
+    /// On by default: a cooler left running can take its plate far below the
+    /// room's dew point, and nothing else in the app notices.
+    enum PlateLimit {
+        static let defaultC: Double = 5.0
+        static let minC: Double = -10.0
+        static let maxC: Double = 20.0
+        /// Readings outside this window are not believed (a 6 Pro plate below
+        /// zero reads as a large unsigned byte).
+        static let plausibleC: ClosedRange<Double> = -40...100
     }
 
     // ── Diagnostics ──────────────────────────────────────────────────────────

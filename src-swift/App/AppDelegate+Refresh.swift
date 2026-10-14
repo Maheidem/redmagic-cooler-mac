@@ -103,9 +103,11 @@ extension AppDelegate {
                                 labels: activeProfile.sliderLabels)
         if !isSwitching {
             coolingSlider.setStep(isManual
-                ? activeProfile.manualSteps.index(matching: ble.mode,
-                                                  fanPercent: ble.fanPercent,
-                                                  boost: ble.boost)
+                // What was asked for, so the thumb stays where the user put it
+                // while the plate limit holds the sent level lower.
+                ? activeProfile.manualSteps.index(matching: ble.requested.mode,
+                                                  fanPercent: ble.requested.fanPercent,
+                                                  boost: ble.requested.boost)
                 : 0)
         }
         coolingSlider.setEnabled(enabled)
@@ -189,7 +191,8 @@ extension AppDelegate {
     }
 
     private func refreshSettingsItems(coolerOn: Bool, pickingDevice: Bool) {
-        for row in [turnOffRow, autoCurveRow, temperatureSourceRow, changeDeviceRow, turnOffQuitRow] {
+        for row in [turnOffRow, autoCurveRow, temperatureSourceRow, plateLimitRow,
+                    changeDeviceRow, turnOffQuitRow] {
             row?.isEnabled = !isInstallingUpdate
         }
 
@@ -199,6 +202,7 @@ extension AppDelegate {
             (turnOffRow, coolerOn),
             (autoCurveRow, true),
             (temperatureSourceRow, true),
+            (plateLimitRow, true),
             (changeDeviceRow, !pickingDevice),
             (turnOffQuitRow, true),
         ])
@@ -263,6 +267,7 @@ extension AppDelegate {
         guard connected else { return nil }
         if isSwitching { return .switching }
         if switchMonitor.looksPoweredOff { return .powerSwitchOff }
+        if ble.heldBack > 0 { return .plateLimit(floorC: plateLimitC) }
         if appMode == .manual {
             guard ble.mode.isOn else {
                 // Off, and the user didn't do it — say who did.

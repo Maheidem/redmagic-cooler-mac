@@ -82,7 +82,10 @@ This is the main difference from the 6 Pro, where `0x1011` selects TEC power and
 | 8 | `50` | 31 W | ~5,460 |
 
 In free air with nothing against it, the plate reached about −20 °C (raw `0xf2`)
-at the top levels within a minute.
+at the top levels within a minute. That is the reason for the app's plate limit
+(Settings → Plate Limit…), which holds cooling back while the plate is under a
+limit: the 8 Pro reports no ambient or humidity reading, so a dew point cannot be
+worked out, and the plate temperature is the signal available.
 
 - **Values below `0x2e` are not "lower".** `0x00`, `0x01`, `0x10` and `0x20` all
   ended at about 32 W and 5,300–5,500 RPM, as hard as level 8 or a little harder. An "off" that

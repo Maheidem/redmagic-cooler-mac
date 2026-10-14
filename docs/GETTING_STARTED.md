@@ -86,6 +86,15 @@ support and links to the porting guide.
   on the Cryo Cooler 8 Pro they are Off, Levels 1 to 8 and **Diablo**, its
   maximum-output mode (about 37 W). Diablo is only ever chosen by hand, and any
   other command switches it off.
+- **Settings → Plate Limit…** protects against condensation and frost. A
+  thermoelectric plate run for long falls well below the room's dew point, and
+  the 8 Pro's reached about −20 °C in free air. The app has no humidity reading,
+  so it watches the cold plate instead: while the plate is colder than your limit
+  (5 °C by default) it steps cooling down a level at a time, and gives the levels
+  back once the plate has stayed 3 °C above the limit for 30 seconds. The level
+  you chose stays selected, and the cooler shows a notice while it is holding
+  back. It applies in Auto and Manual, Diablo included. It is on by default; the
+  Manual auto-off timer is separate and still applies.
 - **Cooler effect** changes the cooler's LED mode and colour. The Auto effect
   uses colour as a heat gauge.
 - **Turn Off** stops cooling while keeping the connection available.

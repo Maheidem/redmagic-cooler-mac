@@ -161,6 +161,11 @@ extension AppDelegate: NSMenuDelegate {
         }
         menu.addItem(wrap(temperatureSourceRow))
 
+        plateLimitRow = settingsRow("Plate Limit…", symbol: "snowflake") {
+            [weak self] in self?.showPlateLimitWindow()
+        }
+        menu.addItem(wrap(plateLimitRow))
+
         // Unlike its neighbours this row leaves the menu open, because
         // everything it does — the inline picker, the scan progress — is
         // displayed in the rows above it.

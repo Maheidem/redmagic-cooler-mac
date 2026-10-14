@@ -34,6 +34,40 @@ extension AppDelegate: CoolerBLEManagerDelegate {
         writeProbeSnapshot()
     }
 
+    /// Holds cooling back while the cold plate is under the user's limit, and lets
+    /// it go again once the plate has recovered. See `PlateGuard`.
+    ///
+    /// Cooling counts as wanted whenever the app has asked for it and the cooler's
+    /// own switch isn't off; that stays true while the guard itself has switched
+    /// the cooler off, so the plate gets the time to warm up and the guard to
+    /// release, rather than the cooler restarting at once.
+    func updatePlateGuard() {
+        let now = Date().timeIntervalSince1970
+        let steps = activeProfile.manualSteps
+        let fresh = ble.isConnected && lastTelemetryAt.map { now - $0 < 5 } == true
+        // 0 is how some coolers say "not measured", and a reading outside the
+        // plausible range (a 6 Pro plate below zero reads as a big unsigned byte)
+        // is not believed either; the guard then keeps what it has.
+        let plate = fresh ? telemetry.map { Double($0.coldC) } : nil
+        let believed = plate.flatMap { $0 != 0 && Config.PlateLimit.plausibleC.contains($0) ? $0 : nil }
+
+        let levels = plateGuard.update(
+            plateC: believed,
+            isCooling: ble.isConnected && ble.requested.mode.isOn && !switchMonitor.looksPoweredOff,
+            floorC: plateLimitOn ? plateLimitC : nil,
+            maxLevels: max(steps.count - 1, 0),
+            now: now)
+        guard levels != ble.heldBack else { return }
+
+        if levels > ble.heldBack, let plate = believed {
+            EventLogger.record("cold plate \(Int(plate))°C is under the \(Int(plateLimitC))°C limit → holding cooling back \(levels) level(s)")
+        } else if levels < ble.heldBack {
+            EventLogger.record("cold plate recovered → holding cooling back \(levels) level(s)")
+        }
+        ble.setHeldBack(levels)
+        refresh()
+    }
+
     /// Re-evaluates whether the cooler's physical switch looks off. Driven from
     /// the tick rather than from telemetry, because *silence* is one of the
     /// tells and silence produces no callback to hang this off.

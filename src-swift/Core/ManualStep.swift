@@ -39,4 +39,18 @@ extension Array where Element == ManualStep {
                     < abs(Int(b.element.fanPercent) - Int(fanPercent))
             }?.offset ?? 0
     }
+
+    /// What to actually send for a request, with cooling held back by `levels`:
+    /// the request's own step moved down that many steps, to Off at the lowest.
+    /// A request that is already off, or one that matches no step, is returned
+    /// unchanged.
+    func holdingBack(_ levels: Int, from request: (mode: CoolingMode, fanPercent: UInt8, boost: Bool))
+        -> (mode: CoolingMode, fanPercent: UInt8, boost: Bool) {
+        guard levels > 0, request.mode.isOn, !isEmpty else { return request }
+        let index = self.index(matching: request.mode, fanPercent: request.fanPercent,
+                               boost: request.boost)
+        guard index > 0 else { return request }
+        let step = self[Swift.max(index - levels, 0)]
+        return (step.mode, step.fanPercent, step.boost)
+    }
 }

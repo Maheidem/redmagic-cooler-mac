@@ -114,6 +114,14 @@ final class CoolerBLEManager: NSObject {
     /// command so it is never left on by accident.
     private(set) var boost = false
 
+    /// What the app last asked for, before any hold-back. `mode`, `fanPercent`
+    /// and `boost` above are what was sent, which can be lower while the cold
+    /// plate limit is holding cooling back.
+    private(set) var requested: (mode: CoolingMode, fanPercent: UInt8, boost: Bool) = (.off, 0, false)
+
+    /// How many levels cooling is held back by while the plate is too cold.
+    private(set) var heldBack = 0
+
     /// True while we hold a peripheral with a live — or half-open — link worth
     /// tearing down at quit.
     var hasActiveLink: Bool { peripheral != nil }
@@ -477,12 +485,28 @@ final class CoolerBLEManager: NSObject {
     /// off, an Auto decision) also clears it. It is written with the fan speed,
     /// inside the flush window quit waits for.
     func apply(mode: CoolingMode, fanPercent: UInt8, boost: Bool = false) {
-        setMode(mode)
-        let target = mode.isOn ? fanPercent : 0
-        let boostTarget = mode.isOn && boost
+        requested = (mode, fanPercent, boost)
+        applyRequested()
+    }
+
+    /// Holds cooling back by `levels` steps of the model's own range (0 lifts it).
+    /// Everything that sets the cooler goes through `requested`, so the hold-back
+    /// can't be bypassed or forgotten by a caller.
+    func setHeldBack(_ levels: Int) {
+        guard levels != heldBack else { return }
+        heldBack = levels
+        applyRequested()
+    }
+
+    /// Sends `requested`, moved down by `heldBack` steps.
+    private func applyRequested() {
+        let sent = (profile?.manualSteps ?? []).holdingBack(heldBack, from: requested)
+        setMode(sent.mode)
+        let target = sent.mode.isOn ? sent.fanPercent : 0
+        let boostTarget = sent.mode.isOn && sent.boost
         DispatchQueue.main.asyncAfter(deadline: .now() + Config.BLE.fanWriteDelay) {
             [weak self] in
-            self?.setFanPercent(target, for: mode)
+            self?.setFanPercent(target, for: sent.mode)
             self?.setBoost(boostTarget)
         }
     }
@@ -494,9 +518,9 @@ final class CoolerBLEManager: NSObject {
         write(profile.boostBytes(on), to: uuid)
     }
 
-    /// Re-asserts the cached mode, fan speed and boost, healing any dropped write.
+    /// Re-asserts what was last asked for, with any hold-back, healing any dropped write.
     func reassertCurrentSettings() {
-        apply(mode: mode, fanPercent: fanPercent, boost: boost)
+        applyRequested()
     }
 
     /// The effect byte that turns the light off on the connected model.
@@ -715,10 +739,13 @@ extension CoolerBLEManager: CBPeripheralDelegate {
         switch characteristic.uuid {
         case profile.coolingModeUUID:
             mode = CoolingMode(rawValue: data[0])
+            // A read-back that is trusted becomes the state to keep asserting.
+            requested.mode = mode
             delegate?.bleManagerDidChangeSettings(self)
 
         case profile.fanSpeedUUID:
             fanPercent = data[0]
+            requested.fanPercent = data[0]
             delegate?.bleManagerDidChangeSettings(self)
 
         case profile.hallUUID:

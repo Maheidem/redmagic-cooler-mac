@@ -31,6 +31,8 @@ final class CoolerPanelView: PanelRowView {
         case autoWaiting(engageC: Int)
         /// The manual auto-off timer ran down and switched the cooler off.
         case manualTimedOut
+        /// The cold plate is under its limit and cooling is being held back.
+        case plateLimit(floorC: Double)
 
         var text: String {
             switch self {
@@ -39,6 +41,8 @@ final class CoolerPanelView: PanelRowView {
             case .powerSwitchOff:     return "Cooler's power switch is off"
             case .autoWaiting(let c): return "Waiting for the Mac to reach \(c)°C"
             case .manualTimedOut:     return "Auto-off timer ended Manual cooling"
+            case .plateLimit(let c):
+                return "Cold plate under \(SystemInfo.formatTemp(c, degreeOnly: true)): holding cooling back"
             }
         }
 
@@ -49,6 +53,7 @@ final class CoolerPanelView: PanelRowView {
                  .manualTimedOut: return "exclamationmark.triangle"
             case .powerSwitchOff: return "power.circle.fill"
             case .autoWaiting:    return "thermometer.medium"
+            case .plateLimit:     return "snowflake"
             }
         }
 
@@ -58,6 +63,10 @@ final class CoolerPanelView: PanelRowView {
             // A genuine hardware fault: the app is commanding a cooler that
             // cannot answer. This one earns the amber.
             case .powerSwitchOff: return .systemOrange
+            // The app is deliberately cooling less than asked, to protect the
+            // plate. The user should notice that the level they chose is not
+            // what is running.
+            case .plateLimit: return .systemOrange
             // Plain ink. Manual staying on is the mode working as documented,
             // not a fault, and an amber line that is on screen for the whole of
             // every manual session teaches the reader to ignore amber.

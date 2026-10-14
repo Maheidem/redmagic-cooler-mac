@@ -70,6 +70,27 @@ extension AppDelegate {
         refresh()
     }
 
+    func showPlateLimitWindow() {
+        let window = plateLimitWindow ?? PlateLimitWindow()
+        window.onSave = { [weak self] in self?.setPlateLimit(enabled: $0, floorC: $1) }
+        plateLimitWindow = window
+        window.show(enabled: plateLimitOn, floorC: plateLimitC)
+    }
+
+    func setPlateLimit(enabled: Bool, floorC: Double) {
+        let defaults = UserDefaults.standard
+        plateLimitOn = enabled
+        plateLimitC = floorC.clamped(to: Config.PlateLimit.minC...Config.PlateLimit.maxC)
+        defaults.set(plateLimitOn, forKey: Config.Key.plateLimitOn)
+        defaults.set(plateLimitC, forKey: Config.Key.plateLimitC)
+        EventLogger.record(enabled
+            ? "plate limit → hold cooling back below \(Int(plateLimitC.rounded()))°C"
+            : "plate limit → off")
+        // Re-judge at once instead of waiting for the next tick.
+        updatePlateGuard()
+        refresh()
+    }
+
     func showAutoCurveWindow() {
         let defaults = UserDefaults.standard
         let window = autoCurveWindow ?? AutoCurveWindow()
